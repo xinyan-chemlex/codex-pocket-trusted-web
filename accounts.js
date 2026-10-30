@@ -4,7 +4,7 @@ import {independentClient,accountRequest,forgetAccount,hasMacPin,pendingPairing,
 import {codeLookup,openBinding} from './client-binding.js';
 import {transport} from './transport.js';
 const $ = id => document.getElementById(id);
-let account, vaultKey, csrf, localInfo, register = false, selected, callbacks = {},authenticating=false,formReady=false,authGeneration=0,devices=[],bindTarget,bindBusy=false,scanner;
+let account, vaultKey, csrf, localInfo, register = false, selected, callbacks = {},authenticating=false,formReady=false,authGeneration=0,devices=[],bindTarget,bindBusy=false,scanner,bindingNotice=0;
 let attemptId=[...crypto.getRandomValues(new Uint8Array(12))].map(x=>x.toString(16).padStart(2,'0')).join('');
 function trace(stage,code='none'){if(localInfo||independentClient)return;fetch('/account/client-event',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({attemptId,stage,code}),signal:AbortSignal.timeout(5000)}).catch(()=>{});}
 function authStatus(text){const node=$('auth-status');if(node)node.textContent=text;}
@@ -52,15 +52,22 @@ async function picker() { $('account-form').setAttribute('data-ready','true'); $
       if(independentClient){const bind=document.createElement('button');bind.type='button';bind.className='text-button';bind.textContent='绑定 / 重新绑定当前设备';bind.onclick=()=>beginBinding(device);actions.append(bind);}
       actions.append(rename, remove); card.append(button, actions); $('mac-list').append(card);
     }
-    if(independentClient&&pendingPairing()){const pending=pendingPairing(),target=devices.find(d=>d.id===pending.ticket?.bridgeId)||devices[0];if(target)beginBinding(target);}
+    if(independentClient&&pendingPairing()){const pending=pendingPairing(),target=devices.find(d=>d.id===pending.ticket?.bridgeId)||devices[0];if(target)beginBinding(target,{notifyMac:false});}
   } catch (e) { $('account-error').textContent = e.message; if (e.status === 401) { vaultKey = null; form(); } }
 }
 function stopScanner(){scanner?.destroy();scanner=null;$('bind-device-camera').hidden=true;}
-function beginBinding(device){
+async function requestMacBindingPage(device){
+  const generation=++bindingNotice;$('bind-device-mac-status').textContent='正在请 Mac 打开设备管理页…';
+  try{const result=await request('/account/binding-start',{id:device.id});if(generation!==bindingNotice||!$('bind-device-dialog').open)return;
+    $('bind-device-mac-status').textContent=result.opened?'Mac 已确认打开设备管理页。请在 Mac 生成新绑定码。':result.status==='throttled'?'Mac 刚刚已收到打开请求，请查看 Mac 浏览器中的设备管理页。':'Mac 未能自动打开页面，请在 Mac 打开本地设备管理页。';
+  }catch(error){if(generation===bindingNotice)$('bind-device-mac-status').textContent=error.message;}
+}
+function beginBinding(device,{notifyMac=true}={}){
   if(!account||!independentClient)return;bindTarget=device;stopScanner();$('bind-device-status').textContent='在 Mac 本地管理页生成新绑定码。每台手机或平板需要单独绑定，已绑定设备不会受影响。';
   $('bind-device-mac').replaceChildren(...devices.map(d=>{const option=document.createElement('option');option.value=d.id;option.textContent=d.name;return option;}));$('bind-device-mac').value=device.id;
   $('bind-device-name').value=localStorage.getItem('pocket-browser-name')||'我的手机 / 平板';$('bind-device-code').value=pendingPairing()?.code||'';
   $('bind-device-retry').hidden=!hasMacPin(device.id);$('bind-device-dialog').showModal();
+  if(notifyMac)requestMacBindingPage(device);else $('bind-device-mac-status').textContent='请在 Mac 设备管理页确认这台设备。';
   const pending=pendingPairing();if(pending?.ticket){clearPendingPairing();runBinding(async()=>pending.ticket);}
 }
 async function runBinding(getTicket){
@@ -84,7 +91,7 @@ async function runBinding(getTicket){
 }
 $('bind-current-device').onclick=()=>{if(devices.length)beginBinding(selected||devices[0]);};
 $('close-bind-device').onclick=()=>$('bind-device-dialog').close();$('bind-device-dialog').addEventListener('close',stopScanner);
-$('bind-device-mac').onchange=()=>{bindTarget=devices.find(d=>d.id===$('bind-device-mac').value);$('bind-device-retry').hidden=!hasMacPin(bindTarget?.id);};
+$('bind-device-mac').onchange=()=>{bindTarget=devices.find(d=>d.id===$('bind-device-mac').value);$('bind-device-retry').hidden=!hasMacPin(bindTarget?.id);if(bindTarget)requestMacBindingPage(bindTarget);};
 $('bind-device-form').onsubmit=event=>{event.preventDefault();const code=$('bind-device-code').value;$('bind-device-code').value='';runBinding(async()=>{const id=$('bind-device-mac').value,result=await request('/account/client-pairing',{id,lookup:await codeLookup(code)});return openBinding(code,result.box);});};
 $('bind-device-retry').onclick=()=>runBinding();
 $('bind-device-scan').onclick=async()=>{
@@ -92,7 +99,7 @@ $('bind-device-scan').onclick=async()=>{
   try{const {default:QrScanner}=await import('./vendor/qr-scanner/qr-scanner.min.js');$('bind-device-camera').hidden=false;scanner=new QrScanner($('bind-device-video'),result=>{try{queuePairing(result.data||result);const pending=pendingPairing();stopScanner();if(pending?.code){$('bind-device-code').value=pending.code;$('bind-device-form').requestSubmit();}else if(pending?.ticket)runBinding(async()=>pending.ticket);}catch(e){$('bind-device-status').textContent=e.message;}},{returnDetailedScanResult:true,preferredCamera:'environment'});await scanner.start();$('bind-device-status').textContent='将摄像头对准 Mac 上的绑定二维码。画面只在当前设备上识别。';}
   catch{$('bind-device-status').textContent='无法使用摄像头，请允许相机访问，或输入 Mac 上的绑定码。';stopScanner();}
 };
-window.addEventListener('pocket-pairing-ready',()=>{if(account&&devices.length&&!scanner){const pending=pendingPairing(),device=devices.find(d=>d.id===pending?.ticket?.bridgeId)||devices[0];beginBinding(device);}});
+window.addEventListener('pocket-pairing-ready',()=>{if(account&&devices.length&&!scanner){const pending=pendingPairing(),device=devices.find(d=>d.id===pending?.ticket?.bridgeId)||devices[0];beginBinding(device,{notifyMac:false});}});
 $('account-toggle').onclick = () => { register = !register; $('account-error').textContent = ''; form(); };
 $('account-form').onsubmit = async event => {
   event.preventDefault();if(!formReady||authenticating)return;const generation=++authGeneration;attemptId=[...crypto.getRandomValues(new Uint8Array(12))].map(x=>x.toString(16).padStart(2,'0')).join('');let stage='password';authenticating=true;$('account-toggle').disabled=true;trace('login-submit');authStatus('正在验证账号…'); $('account-error').textContent = ''; $('account-submit').disabled = true;

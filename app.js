@@ -3,7 +3,7 @@ import {independentClient,receivePairing} from './client-platform.js';
 import {setupTrustedAdmin} from './trusted-ui.js';
 let renderMarkdown,highlightCode,markdownReady;
 function loadMarkdown(){return markdownReady||=(import('./markdown.js').then(module=>{renderMarkdown=module.renderMarkdown;highlightCode=module.highlightCode;}));}
-import { accountUI } from './accounts.js?v=0.10.4';
+import { accountUI } from './accounts.js?v=0.10.5';
 import { activityTime,chronologicalWorkspace,workspaceOrder } from './chronology.js';
 import { Deliveries } from './delivery.js';
 import { icon, buttonIcon } from './icons.js';

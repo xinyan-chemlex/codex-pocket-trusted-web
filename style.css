@@ -45,3 +45,5 @@ body{background:var(--bg)}button,a,input,select,textarea{-webkit-tap-highlight-c
 @media(max-width:700px){.trust-dialog{width:calc(100vw - 20px);padding:20px!important;border-radius:19px!important}.trust-layout{grid-template-columns:1fr}.trust-header h2{font-size:23px}.trust-header p{font-size:12px}.trust-device-list{max-height:none}.trust-footer{flex-direction:column;gap:3px}.trust-code{font-size:12px}.trust-settings{margin-top:18px}.connect-dialog{padding:22px!important}}
 
 .trust-dialog #trusted-invite-code{padding:12px;font-size:13px;letter-spacing:.8px;background:#f4f6fc;border-radius:11px}
+
+.binding-mac-status{font-size:11px;color:#7c8eaa;background:#f5f7fc;border:1px solid #e7edf7;padding:11px 13px;border-radius:10px;line-height:1.8;margin-bottom:17px}.binding-mac-status:empty{display:none}
