@@ -28,13 +28,13 @@ function form() { $('account-form').setAttribute('data-ready',String(formReady))
   $('account-back').hidden = !localInfo;
 }
 async function picker() { $('account-form').setAttribute('data-ready','true'); $('account-screen').dataset.view='devices';document.querySelector('.auth-eyebrow').textContent='你的设备';
-  $('bind-current-device').hidden=!independentClient;
+  $('bind-current-device').hidden=!independentClient;$('bind-current-device').disabled=true;devices=[];
   $('account-refresh').hidden=false;$('account-logout').hidden=false;
   show(); $('account-form').hidden = true; $('account-toggle').hidden = true; $('mac-picker').hidden = false;
   $('account-title').textContent = '选择你的 Mac'; $('account-description').textContent = `已登录：${account.username}`;
   $('mac-list').replaceChildren(); $('account-error').textContent = '';
   try {
-    const data = await request('/account/devices');devices=data.devices;trace('devices-loaded');authStatus('');
+    const data = await request('/account/devices');devices=data.devices;$('bind-current-device').disabled=!devices.length;trace('devices-loaded');authStatus('');
     if (!data.devices.length) { const p = document.createElement('p'); p.className='no-macs';p.append(icon('monitor'));p.append(document.createTextNode('还没有绑定 Mac。在 Mac 桥接程序中登录同一账号即可添加。')); $('mac-list').append(p); }
     for (const device of data.devices) {
       const card = document.createElement('article'); card.className = 'mac-card'+(device.online?' online':' offline');
