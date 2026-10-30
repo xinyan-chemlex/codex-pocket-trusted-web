@@ -5,7 +5,7 @@ export const to64=bytes=>{const data=new Uint8Array(bytes);let value='';for(let 
 export const randomId=()=>to64(crypto.getRandomValues(new Uint8Array(24)));
 export const helloData=(channel,hello)=>[PROTOCOL,'hello',channel.bridgeId,channel.epoch,channel.clientId,channel.id,hello.macPublicKey,hello.publicKey,hello.ephemeralKey,hello.nonce,hello.name];
 export const challengeData=c=>[PROTOCOL,'challenge',c.bridgeId,c.epoch,c.clientId,c.id,c.macPublicKey,c.publicKey,c.clientEphemeralKey,c.clientNonce,c.name,c.sessionId,c.ephemeralKey,c.nonce,c.createdAt,c.expiresAt];
-export const packetData=(channel,box)=>[PROTOCOL,box.kind,channel.bridgeId,channel.epoch,channel.clientId,channel.id,box.sessionId,box.counter,box.nonce,box.data];
+export const packetData=(channel,box)=>[PROTOCOL,box.kind,channel.bridgeId,channel.epoch,channel.clientId,channel.id,box.sessionId,box.counter,box.issuedAt,box.expiresAt,box.nonce,box.data];
 export const trustedAAD=(channel,sessionId,direction,sequence=0)=>JSON.stringify([PROTOCOL,channel.bridgeId,sessionId,channel.epoch,channel.clientId,channel.id,direction,sequence]);
 export async function generateIdentity(){
   const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);
@@ -25,11 +25,11 @@ export async function acceptChallenge(identity,hello,ephemeral,channel,challenge
   const peer=await crypto.subtle.importKey('spki',from64(challenge.ephemeralKey),{name:'ECDH',namedCurve:'P-256'},false,[]);
   const shared=await crypto.subtle.deriveBits({name:'ECDH',public:peer},ephemeral,256),material=await crypto.subtle.importKey('raw',shared,'HKDF',false,['deriveKey']);
   const key=await crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:from64(challenge.nonce),info:text(challengeData(challenge))},material,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
-  return {key,sessionId:challenge.sessionId,identity,counter:0};
+  return {key,sessionId:challenge.sessionId,identity,counter:0,clockOffset:challenge.createdAt-Date.now()};
 }
 export async function trustedPacket(session,channel,kind,value){
   const nonce=crypto.getRandomValues(new Uint8Array(12)),data=await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce,additionalData:text(trustedAAD(channel,session.sessionId,'request'))},session.key,text(value));
-  const box={protocol:PROTOCOL,kind,sessionId:session.sessionId,counter:++session.counter,nonce:to64(nonce),data:to64(data)};
+  const issuedAt=Date.now()+(session.clockOffset||0),box={protocol:PROTOCOL,kind,sessionId:session.sessionId,counter:++session.counter,issuedAt,expiresAt:issuedAt+120000,nonce:to64(nonce),data:to64(data)};
   box.signature=await signData(session.identity.privateKey,packetData(channel,box));return box;
 }
 export async function trustedResponse(session,channel,box,sequence){
