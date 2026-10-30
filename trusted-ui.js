@@ -7,8 +7,8 @@ export async function setupTrustedAdmin(){
   const request=async body=>{const r=await fetch('/api/local-trust',{cache:'no-store',...body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}});const data=await r.json();if(!r.ok)throw new Error(data.error);return data;};
   let state,urlDirty=false,inviteBusy=false;$('trusted-client-url').oninput=()=>{urlDirty=true;};
   const render=data=>{
-    state=data;$('trusted-policy-status').textContent=data.required?'签名保护已启用：只有本地批准的浏览器可以远控。':'签名保护尚未启用：原中继网页仍能控制 Mac。';
-    $('trusted-policy').textContent=data.required?'恢复旧网页控制':'启用签名保护';if(!urlDirty)$('trusted-client-url').value=data.clientUrl||'';
+    state=data;$('trusted-policy-status').textContent=data.required?'强制设备验证已启用：未绑定设备不能读取聊天或控制 Mac。':'请先绑定 Mac 到账号，账号模式会强制校验访问设备。';
+    $('trusted-policy').textContent='设备绑定验证已强制启用';$('trusted-policy').disabled=true;if(!urlDirty)$('trusted-client-url').value=data.clientUrl||'';
     const list=$('trusted-clients');list.replaceChildren();
     for(const c of data.pending){const card=el('article','','mac-card'),name=el('strong',c.name),fingerprint=el('code',c.id.match(/.{1,8}/g).join(' ')),approve=el('button','批准这个浏览器','primary');approve.onclick=()=>act({action:'approve',id:c.id});card.append(el('div','等待本地批准','eyebrow'),name,fingerprint,approve);list.append(card);}
     for(const c of data.clients){const card=el('article','','mac-card'),remove=el('button','撤销设备','secondary danger');remove.onclick=()=>act({action:'revoke',id:c.id});card.append(el('strong',c.name),el('code',c.id.match(/.{1,8}/g).join(' ')),remove);list.append(card);}
@@ -19,7 +19,7 @@ export async function setupTrustedAdmin(){
   for(const button of document.querySelectorAll('[data-trusted-admin]')){button.hidden=false;button.onclick=async()=>{render(await request());dialog.showModal();};}
   $('close-trusted').onclick=()=>dialog.close();$('trusted-invite-button').onclick=()=>act({action:'invite'});
   $('trusted-configure').onsubmit=event=>{event.preventDefault();act({action:'configure',clientUrl:$('trusted-client-url').value.trim()});};
-  $('trusted-policy').onclick=()=>act({action:'policy',required:!state.required});
+  $('trusted-policy').onclick=null;
   const timer=setInterval(()=>{if(dialog.open)request().then(render).catch(e=>{$('trusted-error').textContent=e.message;});},3000);
   window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
   if(location.hash==='#trust')dialog.showModal();
