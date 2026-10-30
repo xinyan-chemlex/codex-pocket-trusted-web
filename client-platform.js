@@ -24,3 +24,4 @@ export function receivePairing(){
     localStorage.setItem('pocket-mac-pin:'+value.bridgeId,value.macPublicKey);sessionStorage.setItem('pocket-pair-ticket:'+value.bridgeId,JSON.stringify(value));
   }finally{history.replaceState(null,'',location.pathname);}
 }
+if(independentClient)window.addEventListener('hashchange',()=>{try{receivePairing();}catch(error){const node=document.getElementById('account-error');if(node)node.textContent=error.message;}});
