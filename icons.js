@@ -1,4 +1,5 @@
 const paths={
+  phone:['M7 2h10v20H7z','M10 5h4','M11 19h2'],
   terminal:['M4 5h16v14H4z','m7 9 3 3-3 3','M13 15h4'],
   monitor:['M3 4h18v13H3z','M8 21h8','M12 17v4'],
   server:['M4 3h16v7H4z','M4 14h16v7H4z','M7 6.5h.01','M7 17.5h.01','M11 6.5h6','M11 17.5h6'],
