@@ -47,7 +47,7 @@ export class TrustedConnection {
           }).catch(error=>{this.pending.delete(m.id);p.reject(error);});
         }
       };
-      socket.onclose=event=>{clearTimeout(timer);if(this.socket!==socket)return;this.socket=null;this.session=null;reject(new Error('连接暂时中断'));this.failPending(new Error('连接中断，正在确认已发送操作'));for(const sub of this.subscriptions)sub.dispatchEvent(new Event('error'));if(event.code===1008&&!this.closed)window.dispatchEvent(new Event('pocket-access-ended'));if(!this.closed&&this.subscriptions.size){clearTimeout(this.timer);this.timer=setTimeout(()=>this.connect().catch(()=>{}),this.retry);this.retry=Math.min(this.retry*2,10000);}};
+      socket.onclose=event=>{clearTimeout(timer);if(this.socket!==socket)return;this.socket=null;this.session=null;reject(new Error('连接暂时中断'));this.failPending(new Error('连接中断，正在确认已发送操作'));for(const sub of this.subscriptions)sub.dispatchEvent(new Event('error'));if(event.code===1008&&!this.closed&&/session|access|revoked|migrated/i.test(event.reason||''))window.dispatchEvent(new Event('pocket-access-ended'));if(!this.closed&&this.subscriptions.size){clearTimeout(this.timer);this.timer=setTimeout(()=>this.connect().catch(()=>{}),this.retry);this.retry=Math.min(this.retry*2,10000);}};
       socket.onerror=()=>{};
     });
   }

@@ -67,9 +67,19 @@ async function runBinding(getTicket){
   if(bindBusy||!account)return;bindBusy=true;const device=devices.find(d=>d.id===$('bind-device-mac').value);if(!device){bindBusy=false;return;}
   const accountId=account.id,generation=authGeneration,name=$('bind-device-name').value.trim()||'我的手机 / 平板';const controls=[...$('bind-device-form').querySelectorAll('input,select,button')];for(const c of controls)c.disabled=true;$('bind-device-status').textContent=getTicket?'正在验证绑定码…':'正在向 Mac 验证当前设备…';
   try{
-    if(getTicket){const ticket=await getTicket();if(account?.id!==accountId||authGeneration!==generation)return;savePairing(ticket,device.id);}
-    localStorage.setItem('pocket-browser-name',name);selected=device;$('bind-device-code').value='';stopScanner();await callbacks.onSelect(device,null);$('bind-device-dialog').close();
-  }catch(error){$('account-screen').hidden=false;$('bind-device-status').textContent=(error.code==='local-approval-required'?'绑定请求已发出。':'绑定未完成：')+error.message;if(!$('bind-device-dialog').open)$('bind-device-dialog').showModal();$('bind-device-retry').hidden=!hasMacPin(device.id);}
+    if(getTicket){clearPendingPairing();const ticket=await getTicket();if(account?.id!==accountId||authGeneration!==generation)return;savePairing(ticket,device.id);}
+    localStorage.setItem('pocket-browser-name',name);selected=device;$('bind-device-code').value='';stopScanner();
+    // Do not clear or reopen the workspace while approval is still pending.
+    transport.selectDevice(device.id,null);const status=await transport.request('/api/status');
+    if(status.trusted!==true)throw new Error('Mac 尚未确认设备签名');
+    $('bind-device-status').textContent='Mac 已确认设备绑定，正在打开工作空间…';await callbacks.onSelect(device,null,{connected:true});$('bind-device-dialog').close();
+  }catch(error){
+    const waiting=error.code==='local-approval-required',expired=['pairing-required','client-auth-required'].includes(error.code);
+    if(expired){sessionStorage.removeItem('pocket-pair-ticket:'+device.id);clearPendingPairing();}
+    $('bind-device-status').textContent=waiting?'等待 Mac 本地批准。请核对下方指纹，在 Mac 点击“批准这个浏览器”后，再检查连接。\n'+error.message:expired?'绑定信息已过期或未被 Mac 接受。请在 Mac 重新生成绑定码后输入，尚未批准此设备。':'连接未完成：'+error.message;
+    if(!$('bind-device-dialog').open){$('account-screen').hidden=false;$('bind-device-dialog').showModal();}
+    $('bind-device-retry').hidden=expired||!hasMacPin(device.id);
+  }
   finally{bindBusy=false;for(const c of controls)c.disabled=false;}
 }
 $('bind-current-device').onclick=()=>{if(devices.length)beginBinding(selected||devices[0]);};
@@ -127,7 +137,7 @@ export const accountUI = {
   get selected() { return selected; },
 };
 window.addEventListener('pocket-access-ended',async()=>{
-  if(authenticating)return;
+  if(authenticating||bindBusy)return;
   try{const current=await request('/account/session');if(current.account.id===account?.id&&vaultKey){csrf=current.csrf;remember();callbacks.onLogout?.();await picker();return;}}
   catch(error){if(error.status!==401)return;}
   forget();callbacks.onLogout?.();form();

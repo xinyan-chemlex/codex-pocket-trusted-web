@@ -3,7 +3,7 @@ import {independentClient,receivePairing} from './client-platform.js';
 import {setupTrustedAdmin} from './trusted-ui.js';
 let renderMarkdown,highlightCode,markdownReady;
 function loadMarkdown(){return markdownReady||=(import('./markdown.js').then(module=>{renderMarkdown=module.renderMarkdown;highlightCode=module.highlightCode;}));}
-import { accountUI } from './accounts.js?v=0.10.2';
+import { accountUI } from './accounts.js?v=0.10.3';
 import { activityTime,chronologicalWorkspace,workspaceOrder } from './chronology.js';
 import { Deliveries } from './delivery.js';
 import { icon, buttonIcon } from './icons.js';
@@ -29,7 +29,7 @@ function showRelayLink(data){
   }
 }
 async function startAccounts(){
-  await accountUI.start({onSelect:async(device,encryptionKey)=>{clearWorkspace();transport.selectDevice(device.id,encryptionKey);$('account-switch').hidden=false;$('logout').textContent='退出账号';$('selected-mac').hidden=false;$('selected-mac').replaceChildren(icon('monitor'),el('span',null,device.name));state.device=await api('/api/status');await openWorkspace();},onLogout:()=>{clearWorkspace();transport.disconnect();}});
+  await accountUI.start({onSelect:async(device,encryptionKey,options={})=>{clearWorkspace();if(!options.connected)transport.selectDevice(device.id,encryptionKey);$('account-switch').hidden=false;$('logout').textContent='退出账号';$('selected-mac').hidden=false;$('selected-mac').replaceChildren(icon('monitor'),el('span',null,device.name));state.device=await api('/api/status');await openWorkspace();},onLogout:()=>{clearWorkspace();transport.disconnect();}});
 }
 async function initialize(){
   if(independentClient){try{receivePairing();}catch(e){$('account-error').textContent=e.message;}}
