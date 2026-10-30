@@ -2,9 +2,10 @@ import {independentClient} from './client-platform.js';
 import {icon} from './icons.js';
 const $=id=>document.getElementById(id);
 const el=(tag,text='',cls)=>{const n=document.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n;};
-export async function setupTrustedAdmin(){
+export async function setupTrustedAdmin({standalone=false}={}){
   if(independentClient||!['127.0.0.1','localhost'].includes(location.hostname))return;
   const dialog=$('trusted-dialog');if(!dialog)return;
+  if(standalone){document.documentElement.dataset.entry='management';document.body.classList.add('local-management');for(const id of ['boot-screen','account-screen','pair-screen','workspace'])$(id).hidden=true;$('close-trusted').hidden=true;if(!dialog.open)dialog.show();}
   const request=async body=>{const r=await fetch('/api/local-trust',{cache:'no-store',...body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}});const data=await r.json();if(!r.ok)throw new Error(data.error);return data;};
   let urlDirty=false,inviteBusy=false,listSignature='',invite;
   $('trusted-client-url').oninput=()=>{urlDirty=true;};
@@ -45,11 +46,11 @@ export async function setupTrustedAdmin(){
     catch(error){$('trusted-error').textContent=error.message;}
     finally{if(body.action==='invite'){inviteBusy=false;$('trusted-invite-button').disabled=false;$('trusted-invite-button').textContent=invite?'生成另一份绑定码':'生成新绑定码';}}
   }
-  try{render(await request());}catch{return;}
+  try{render(await request());}catch(error){if(standalone)$('trusted-error').textContent='本机设备管理暂时不可用：'+error.message;return;}
   for(const button of document.querySelectorAll('[data-trusted-admin]')){button.hidden=false;button.onclick=async()=>{render(await request());dialog.showModal();};}
   $('close-trusted').onclick=()=>dialog.close();$('trusted-invite-button').onclick=()=>act({action:'invite'});
   $('trusted-configure').onsubmit=event=>{event.preventDefault();act({action:'configure',clientUrl:$('trusted-client-url').value.trim()});};
   const timer=setInterval(()=>{if(dialog.open){updateExpiry();request().then(render).catch(e=>{$('trusted-error').textContent=e.message;});}},3000);
   window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
-  if(location.hash==='#trust')dialog.showModal();
+  if(!standalone&&location.hash==='#trust')dialog.showModal();
 }

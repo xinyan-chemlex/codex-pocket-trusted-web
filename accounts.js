@@ -108,6 +108,7 @@ $('account-form').onsubmit = async event => {
     if (register && password !== $('account-confirm').value) throw new Error('两次密码不一致');
     if (localInfo) {
       const result = await request('/api/account/setup', { username, password, register, name: $('account-mac-name').value,replaceBinding:Boolean(localInfo.replaceBinding) });
+      history.replaceState(null,'',location.pathname+'#trust');if(callbacks.onLocalBack){await callbacks.onLocalBack();return;}
       $('account-form').hidden = true; $('account-toggle').hidden = true; $('account-screen').dataset.view='bound';$('account-title').textContent = 'Mac 已绑定'; $('account-description').textContent = `${result.deviceName} · ${result.username}`;
       const link = document.createElement('a'); link.className = 'primary wide'; link.href = result.publicOrigin; link.textContent = '打开统一网址'; link.target = '_blank'; link.rel = 'noopener'; $('mac-list').replaceChildren(link); $('mac-picker').hidden = false;
     } else {

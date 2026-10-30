@@ -3,7 +3,7 @@ import {independentClient,receivePairing} from './client-platform.js';
 import {setupTrustedAdmin} from './trusted-ui.js';
 let renderMarkdown,highlightCode,markdownReady;
 function loadMarkdown(){return markdownReady||=(import('./markdown.js').then(module=>{renderMarkdown=module.renderMarkdown;highlightCode=module.highlightCode;}));}
-import { accountUI } from './accounts.js?v=0.10.5';
+import { accountUI } from './accounts.js?v=0.10.6';
 import { activityTime,chronologicalWorkspace,workspaceOrder } from './chronology.js';
 import { Deliveries } from './delivery.js';
 import { icon, buttonIcon } from './icons.js';
@@ -17,7 +17,7 @@ state.images=[];state.imageDrafts=new Map();state.uploading=0;state.imageCache=n
 const hostName=id=>state.hosts.find(h=>h.id===id)?.name||id;
 const projectName=id=>state.projects.find(p=>p.id===id)?.name||'项目';
 const effortNames={none:'不思考',minimal:'最少',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',ultra:'极高'};
-function resetLogin(){state.source?.close();$('boot-screen').hidden=true;$('account-screen').hidden=true;$('workspace').hidden=true;$('pair-screen').hidden=false;}
+function resetLogin(){state.source?.close();$('boot-screen').hidden=true;$('account-screen').hidden=true;$('workspace').hidden=true;if(document.documentElement.dataset.entry==='management'){$('pair-screen').hidden=true;return;}$('pair-screen').hidden=false;}
 function showRelayLink(data){
   if(!data.relayUrl||!data.qr)return;
   for(const box of [$('relay-invite'),$('settings-relay-invite')]){
@@ -34,6 +34,10 @@ async function startAccounts(){
 async function initialize(){
   if(independentClient){try{receivePairing();}catch(e){$('account-error').textContent=e.message;}}
   const entry=document.documentElement.dataset.entry;
+  if(entry==='management'){
+    if(location.hash==='#bind'){const info=await accountUI.info();document.documentElement.dataset.entry='local';accountUI.local(info,initialize);return;}
+    await setupTrustedAdmin({standalone:true});return;
+  }
   if(entry==='accounts'){
     // Retired pairing links become the canonical account entry before connecting.
     if(location.search||location.hash)history.replaceState(null,'',location.pathname);
@@ -42,7 +46,7 @@ async function initialize(){
   try{
     const info=await accountUI.info();
     if(info.mode==='accounts'&&entry!=='legacy'){await startAccounts();return;}
-    if(info.mode==='local'){accountUI.local(info,initialize);if(location.hash==='#bind')return;}
+    if(info.mode==='local'){if(info.bound){await setupTrustedAdmin({standalone:true});return;}accountUI.local(info,initialize);await setupTrustedAdmin();if(location.hash==='#bind')return;}
   }catch{}
   if(location.hash==='#pairing'&&!transport.relay){resetLogin();document.body.classList.add('pairing-only');document.querySelector('#pair-screen h1').textContent='手机扫码连接';document.querySelector('#pair-screen .pair-card>p').textContent='手机和平板使用其他 Wi‑Fi 或蜂窝网络也能访问。';try{showRelayLink(await api('/api/local-pairing'));}catch(e){$('pair-error').textContent=e.message;}const back=el('a','relay-link','返回 Mac 控制面板');back.href='/';document.querySelector('#pair-screen .pair-card').append(back);return;}
   try{state.device=await api('/api/status');await openWorkspace();}catch(e){resetLogin();if(e.status!==401)$('pair-error').textContent=e.message;const code=new URLSearchParams(location.hash.slice(1)).get('code');if(code)$('pair-code').value=code;try{const data=await api('/api/local-pairing');if(data.code){$('pair-code').value=data.code;$('device-name').value='Mac 控制面板';}showRelayLink(data);}catch{}}
@@ -190,7 +194,6 @@ document.querySelector('.auth-lock').replaceChildren(icon('lock'));
 for(const logo of document.querySelectorAll('.logo'))logo.replaceChildren(icon('terminal','brand-icon'));
 for(const[id,name,label]of[['new-chat','plus','新建对话'],['new-project-button','folder','新增项目'],['account-switch','monitor','切换 Mac'],['new-toolbar','plus','新建对话'],['browse-files','folder','项目文件'],['toggle-workspace','panel',''],['collapse-workspace','panel',''],['settings','settings',''],['refresh','refresh','刷新'],['add-image','image','图片'],['send','up',''],['empty-new','plus','新建对话'],['empty-project','folder','新增项目']])buttonIcon(id,name,label);
 if('serviceWorker'in navigator&&isSecureContext)navigator.serviceWorker.register('/codex-pocket-trusted-web/sw.js').catch(()=>{});
-setupTrustedAdmin().catch(()=>{});
 function renderImageDrafts(){const box=$('image-drafts');box.hidden=!state.images.length;box.replaceChildren(...state.images.map(image=>{const card=el('div','image-draft');card.dataset.status=image.status||'ready';const img=el('img');img.src=image.preview;img.alt=image.name;img.onclick=()=>imageViewer(image.preview,image.name);const remove=el('button','image-remove','×');remove.type='button';remove.setAttribute('aria-label','移除图片 '+image.name);remove.onclick=()=>{image.removed=true;state.images=state.images.filter(i=>i!==image);if(image.preview.startsWith('blob:'))URL.revokeObjectURL(image.preview);renderImageDrafts();updateComposer();};card.append(img,remove,el('span',null,image.name));if(image.status&&image.status!=='ready')card.append(el('span','image-upload-state',({queued:'待上传',preparing:'处理中',uploading:'上传中',failed:'上传失败'})[image.status]));if(image.error)card.title=image.error;return card;}));}
 async function prepareImage(file){const url=URL.createObjectURL(file);try{const img=new Image();img.src=url;await img.decode();const scale=Math.min(1,2048/Math.max(img.naturalWidth,img.naturalHeight)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0,canvas.width,canvas.height);let data=canvas.toDataURL(file.type==='image/png'?'image/png':'image/jpeg',0.88);if(data.length>3*1024*1024){ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);data=canvas.toDataURL('image/jpeg',0.84);}return data;}catch{throw new Error('图片无法读取，请使用 PNG、JPEG 或 WebP');}finally{URL.revokeObjectURL(url);}}
 async function addImages(files){
