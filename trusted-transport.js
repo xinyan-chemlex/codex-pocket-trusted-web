@@ -26,7 +26,7 @@ export class TrustedConnection {
         if(m.type==='welcome'){
           if(handshaking)return;handshaking=true;this.wireEpoch=m.epoch;this.clientId=m.clientId;
           (async()=>{
-            const channel={bridgeId:this.bridge,epoch:m.epoch,clientId:m.clientId,id:randomId()},hello=await makeHello(identity,pin.macPublicKey,channel);
+            const channel={bridgeId:this.bridge,epoch:m.epoch,clientId:m.clientId,id:randomId()},hello=await makeHello(identity,pin.macPublicKey,channel,globalThis.localStorage?.getItem('pocket-browser-name')||'我的浏览器');
             const challenge=await this.exchange(socket,channel.id,hello.hello);this.session=await acceptChallenge(identity,hello.hello,hello.ephemeral,channel,challenge);
             const c={...channel,id:randomId()},box=await trustedPacket(this.session,c,'authorize',{token:pin.token||''});
             let result;try{result=await this.jsonExchange(socket,c,box,this.session);}catch(error){if(error.code==='local-approval-required'){const hash=await crypto.subtle.digest('SHA-256',text(identity.publicKey)),fingerprint=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('').match(/.{1,8}/g).join(' ');error.message+='。浏览器指纹：'+fingerprint;}throw error;}

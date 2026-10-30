@@ -1,9 +1,10 @@
 import { icon } from './icons.js';
 import { createVault, unlockVault, unlockDevice } from './account-crypto.js';
-import {independentClient,accountRequest,forgetAccount} from './client-platform.js';
+import {independentClient,accountRequest,forgetAccount,hasMacPin,pendingPairing,clearPendingPairing,savePairing,queuePairing} from './client-platform.js';
+import {codeLookup,openBinding} from './client-binding.js';
 import {transport} from './transport.js';
 const $ = id => document.getElementById(id);
-let account, vaultKey, csrf, localInfo, register = false, selected, callbacks = {},authenticating=false,formReady=false,authGeneration=0;
+let account, vaultKey, csrf, localInfo, register = false, selected, callbacks = {},authenticating=false,formReady=false,authGeneration=0,devices=[],bindTarget,bindBusy=false,scanner;
 let attemptId=[...crypto.getRandomValues(new Uint8Array(12))].map(x=>x.toString(16).padStart(2,'0')).join('');
 function trace(stage,code='none'){if(localInfo||independentClient)return;fetch('/account/client-event',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({attemptId,stage,code}),signal:AbortSignal.timeout(5000)}).catch(()=>{});}
 function authStatus(text){const node=$('auth-status');if(node)node.textContent=text;}
@@ -14,6 +15,7 @@ async function request(path, body) {
 }
 function show() { $('boot-screen').hidden=true; for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();$('workspace').hidden = true; $('pair-screen').hidden = true; $('account-screen').hidden = false; }
 function form() { $('account-form').setAttribute('data-ready',String(formReady)); $('account-submit').disabled=!formReady||authenticating;authStatus(formReady?'':'正在准备登录，请稍候…'); $('account-screen').dataset.view='form';document.querySelector('.auth-eyebrow').textContent=localInfo?'连接你的 Mac':register?'开始使用':'欢迎回来';
+  $('bind-current-device').hidden=true;
   $('account-rebind').hidden=true;
   $('account-refresh').hidden=Boolean(localInfo);$('account-logout').hidden=Boolean(localInfo);
   show(); $('mac-picker').hidden = true; $('account-form').hidden = false; $('account-toggle').hidden = false;
@@ -26,12 +28,13 @@ function form() { $('account-form').setAttribute('data-ready',String(formReady))
   $('account-back').hidden = !localInfo;
 }
 async function picker() { $('account-form').setAttribute('data-ready','true'); $('account-screen').dataset.view='devices';document.querySelector('.auth-eyebrow').textContent='你的设备';
+  $('bind-current-device').hidden=!independentClient;
   $('account-refresh').hidden=false;$('account-logout').hidden=false;
   show(); $('account-form').hidden = true; $('account-toggle').hidden = true; $('mac-picker').hidden = false;
   $('account-title').textContent = '选择你的 Mac'; $('account-description').textContent = `已登录：${account.username}`;
   $('mac-list').replaceChildren(); $('account-error').textContent = '';
   try {
-    const data = await request('/account/devices');trace('devices-loaded');authStatus('');
+    const data = await request('/account/devices');devices=data.devices;trace('devices-loaded');authStatus('');
     if (!data.devices.length) { const p = document.createElement('p'); p.className='no-macs';p.append(icon('monitor'));p.append(document.createTextNode('还没有绑定 Mac。在 Mac 桥接程序中登录同一账号即可添加。')); $('mac-list').append(p); }
     for (const device of data.devices) {
       const card = document.createElement('article'); card.className = 'mac-card'+(device.online?' online':' offline');
@@ -39,17 +42,47 @@ async function picker() { $('account-form').setAttribute('data-ready','true'); $
       const top=document.createElement('div');top.className='mac-card-top';const symbol=document.createElement('span');symbol.className='mac-symbol';symbol.append(icon('monitor'));const status=document.createElement('span');status.className='mac-state';status.textContent=device.online?'在线':'离线';top.append(symbol,status);
       const name=document.createElement('strong');name.className='mac-name';name.textContent=device.name;
       const meta=document.createElement('span');meta.className='mac-meta';meta.textContent=device.createdAt?'绑定于 '+new Date(device.createdAt).toLocaleDateString('zh-CN',{month:'long',day:'numeric'}):'你的 Mac 工作空间';
-      const action=document.createElement('span');action.className='mac-connect';action.append(document.createTextNode(device.online?'打开工作空间':'等待 Mac 上线'),icon('arrow'));button.append(top,name,meta,action);
-      button.onclick = async () => { button.disabled = true; try { const key = independentClient?null:await unlockDevice(vaultKey, device, account.id); selected = device;action.firstChild.textContent='正在连接工作空间…';await callbacks.onSelect(device, key); } catch (e) { $('account-screen').hidden=false;$('account-error').textContent = e.message; } finally { button.disabled = !device.online;action.firstChild.textContent=device.online?'打开工作空间':'等待 Mac 上线'; } };
+      const action=document.createElement('span');action.className='mac-connect';const label=()=>!device.online?'等待 Mac 上线':independentClient&&!hasMacPin(device.id)?'绑定当前设备':'打开工作空间';action.append(document.createTextNode(label()),icon('arrow'));button.append(top,name,meta,action);
+      button.onclick = async () => {if(independentClient&&!hasMacPin(device.id)){beginBinding(device);return;}button.disabled = true; try { const key = independentClient?null:await unlockDevice(vaultKey, device, account.id); selected = device;action.firstChild.textContent='正在连接工作空间…';await callbacks.onSelect(device, key); } catch (e) { $('account-screen').hidden=false;if(independentClient&&['pairing-required','local-approval-required','client-auth-required'].includes(e.code)){beginBinding(device);$('bind-device-status').textContent=e.message;}else $('account-error').textContent = e.message; } finally { button.disabled = !device.online;action.firstChild.textContent=label(); } };
       const actions = document.createElement('div'); actions.className = 'mac-card-actions';
       const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'text-button'; rename.textContent = '重命名';
       rename.onclick = () => { $('rename-mac-id').value = device.id; $('rename-mac-name').value = device.name; $('rename-mac-error').textContent = ''; $('rename-mac-dialog').showModal(); };
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'text-button danger'; remove.textContent = '解除绑定';
       remove.onclick = () => { $('remove-mac-id').value = device.id; $('remove-mac-name').textContent = device.name; $('remove-mac-error').textContent = ''; $('remove-mac-dialog').showModal(); };
+      if(independentClient){const bind=document.createElement('button');bind.type='button';bind.className='text-button';bind.textContent='绑定 / 重新绑定当前设备';bind.onclick=()=>beginBinding(device);actions.append(bind);}
       actions.append(rename, remove); card.append(button, actions); $('mac-list').append(card);
     }
+    if(independentClient&&pendingPairing()){const pending=pendingPairing(),target=devices.find(d=>d.id===pending.ticket?.bridgeId)||devices[0];if(target)beginBinding(target);}
   } catch (e) { $('account-error').textContent = e.message; if (e.status === 401) { vaultKey = null; form(); } }
 }
+function stopScanner(){scanner?.destroy();scanner=null;$('bind-device-camera').hidden=true;}
+function beginBinding(device){
+  if(!account||!independentClient)return;bindTarget=device;stopScanner();$('bind-device-status').textContent='在 Mac 本地管理页生成新绑定码。每台手机或平板需要单独绑定，已绑定设备不会受影响。';
+  $('bind-device-mac').replaceChildren(...devices.map(d=>{const option=document.createElement('option');option.value=d.id;option.textContent=d.name;return option;}));$('bind-device-mac').value=device.id;
+  $('bind-device-name').value=localStorage.getItem('pocket-browser-name')||'我的手机 / 平板';$('bind-device-code').value=pendingPairing()?.code||'';
+  $('bind-device-retry').hidden=!hasMacPin(device.id);$('bind-device-dialog').showModal();
+  const pending=pendingPairing();if(pending?.ticket){clearPendingPairing();runBinding(async()=>pending.ticket);}
+}
+async function runBinding(getTicket){
+  if(bindBusy||!account)return;bindBusy=true;const device=devices.find(d=>d.id===$('bind-device-mac').value);if(!device){bindBusy=false;return;}
+  const accountId=account.id,generation=authGeneration,name=$('bind-device-name').value.trim()||'我的手机 / 平板';const controls=[...$('bind-device-form').querySelectorAll('input,select,button')];for(const c of controls)c.disabled=true;$('bind-device-status').textContent=getTicket?'正在验证绑定码…':'正在向 Mac 验证当前设备…';
+  try{
+    if(getTicket){const ticket=await getTicket();if(account?.id!==accountId||authGeneration!==generation)return;savePairing(ticket,device.id);}
+    localStorage.setItem('pocket-browser-name',name);selected=device;$('bind-device-code').value='';stopScanner();await callbacks.onSelect(device,null);$('bind-device-dialog').close();
+  }catch(error){$('account-screen').hidden=false;$('bind-device-status').textContent=(error.code==='local-approval-required'?'绑定请求已发出。':'绑定未完成：')+error.message;if(!$('bind-device-dialog').open)$('bind-device-dialog').showModal();$('bind-device-retry').hidden=!hasMacPin(device.id);}
+  finally{bindBusy=false;for(const c of controls)c.disabled=false;}
+}
+$('bind-current-device').onclick=()=>{if(devices.length)beginBinding(selected||devices[0]);};
+$('close-bind-device').onclick=()=>$('bind-device-dialog').close();$('bind-device-dialog').addEventListener('close',stopScanner);
+$('bind-device-mac').onchange=()=>{bindTarget=devices.find(d=>d.id===$('bind-device-mac').value);$('bind-device-retry').hidden=!hasMacPin(bindTarget?.id);};
+$('bind-device-form').onsubmit=event=>{event.preventDefault();const code=$('bind-device-code').value;$('bind-device-code').value='';runBinding(async()=>{const id=$('bind-device-mac').value,result=await request('/account/client-pairing',{id,lookup:await codeLookup(code)});return openBinding(code,result.box);});};
+$('bind-device-retry').onclick=()=>runBinding();
+$('bind-device-scan').onclick=async()=>{
+  if(scanner||bindBusy)return;
+  try{const {default:QrScanner}=await import('./vendor/qr-scanner/qr-scanner.min.js');$('bind-device-camera').hidden=false;scanner=new QrScanner($('bind-device-video'),result=>{try{queuePairing(result.data||result);const pending=pendingPairing();stopScanner();if(pending?.code){$('bind-device-code').value=pending.code;$('bind-device-form').requestSubmit();}else if(pending?.ticket)runBinding(async()=>pending.ticket);}catch(e){$('bind-device-status').textContent=e.message;}},{returnDetailedScanResult:true,preferredCamera:'environment'});await scanner.start();$('bind-device-status').textContent='将摄像头对准 Mac 上的绑定二维码。画面只在当前设备上识别。';}
+  catch{$('bind-device-status').textContent='无法使用摄像头，请允许相机访问，或输入 Mac 上的绑定码。';stopScanner();}
+};
+window.addEventListener('pocket-pairing-ready',()=>{if(account&&devices.length&&!scanner){const pending=pendingPairing(),device=devices.find(d=>d.id===pending?.ticket?.bridgeId)||devices[0];beginBinding(device);}});
 $('account-toggle').onclick = () => { register = !register; $('account-error').textContent = ''; form(); };
 $('account-form').onsubmit = async event => {
   event.preventDefault();if(!formReady||authenticating)return;const generation=++authGeneration;attemptId=[...crypto.getRandomValues(new Uint8Array(12))].map(x=>x.toString(16).padStart(2,'0')).join('');let stage='password';authenticating=true;$('account-toggle').disabled=true;trace('login-submit');authStatus('正在验证账号…'); $('account-error').textContent = ''; $('account-submit').disabled = true;
