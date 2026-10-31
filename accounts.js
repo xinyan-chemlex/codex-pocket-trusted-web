@@ -43,7 +43,7 @@ async function picker() { $('account-form').setAttribute('data-ready','true'); $
       const name=document.createElement('strong');name.className='mac-name';name.textContent=device.name;
       const meta=document.createElement('span');meta.className='mac-meta';meta.textContent=device.createdAt?'绑定于 '+new Date(device.createdAt).toLocaleDateString('zh-CN',{month:'long',day:'numeric'}):'你的 Mac 工作空间';
       const action=document.createElement('span');action.className='mac-connect';const label=()=>!device.online?'等待 Mac 上线':independentClient&&!hasMacPin(device.id)?'绑定当前设备':'打开工作空间';action.append(document.createTextNode(label()),icon('arrow'));button.append(top,name,meta,action);
-      button.onclick = async () => {if(independentClient&&!hasMacPin(device.id)){beginBinding(device);return;}button.disabled = true; try { const key = independentClient?null:await unlockDevice(vaultKey, device, account.id); selected = device;action.firstChild.textContent='正在连接工作空间…';await callbacks.onSelect(device, key); } catch (e) { $('account-screen').hidden=false;if(independentClient&&['pairing-required','local-approval-required','client-auth-required'].includes(e.code)){beginBinding(device);$('bind-device-status').textContent=e.message;}else $('account-error').textContent = e.message; } finally { button.disabled = !device.online;action.firstChild.textContent=label(); } };
+      button.onclick = async () => {if(independentClient&&!hasMacPin(device.id)){beginBinding(device);return;}button.disabled = true; try { const key = independentClient?null:await unlockDevice(vaultKey, device, account.id); selected = device;notifyConnectionMac(device);action.firstChild.textContent='正在连接工作空间…';await callbacks.onSelect(device, key); } catch (e) { $('account-screen').hidden=false;if(independentClient&&['pairing-required','local-approval-required','client-auth-required'].includes(e.code)){beginBinding(device);$('bind-device-status').textContent=e.message;}else $('account-error').textContent = e.message; } finally { button.disabled = !device.online;action.firstChild.textContent=label(); } };
       const actions = document.createElement('div'); actions.className = 'mac-card-actions';
       const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'text-button'; rename.textContent = '重命名';
       rename.onclick = () => { $('rename-mac-id').value = device.id; $('rename-mac-name').value = device.name; $('rename-mac-error').textContent = ''; $('rename-mac-dialog').showModal(); };
@@ -61,6 +61,11 @@ async function requestMacBindingPage(device){
   try{const result=await request('/account/binding-start',{id:device.id});if(generation!==bindingNotice||!$('bind-device-dialog').open)return;
     $('bind-device-mac-status').textContent=result.opened?'Mac 已确认打开设备管理页。请在 Mac 生成新绑定码。':result.status==='throttled'?'Mac 刚刚已收到打开请求，请查看 Mac 浏览器中的设备管理页。':'Mac 未能自动打开页面，请在 Mac 打开本地设备管理页。';
   }catch(error){if(generation===bindingNotice)$('bind-device-mac-status').textContent=error.message;}
+}
+async function notifyConnectionMac(device){
+  const accountId=account?.id,generation=authGeneration;
+  try{const result=await request('/account/binding-start',{id:device.id});if(account?.id===accountId&&authGeneration===generation&&selected?.id===device.id)callbacks.onMacPageResult?.(result);}
+  catch(error){if(account?.id===accountId&&authGeneration===generation&&selected?.id===device.id)callbacks.onMacPageResult?.({opened:false,status:'failed',error:error.message});}
 }
 function beginBinding(device,{notifyMac=true}={}){
   if(!account||!independentClient)return;bindTarget=device;stopScanner();$('bind-device-status').textContent='在 Mac 本地管理页生成新绑定码。每台手机或平板需要单独绑定，已绑定设备不会受影响。';
@@ -128,6 +133,7 @@ $('rename-mac-form').onsubmit = async e => { e.preventDefault(); try { await req
 $('remove-mac-form').onsubmit = async e => { e.preventDefault(); try { await request('/account/remove', { id: $('remove-mac-id').value }); $('remove-mac-dialog').close(); await picker(); } catch (error) { $('remove-mac-error').textContent = error.message; } };
 $('close-rename-mac').onclick = () => $('rename-mac-dialog').close(); $('close-remove-mac').onclick = () => $('remove-mac-dialog').close();
 export const accountUI = {
+  async openMacPage(){if(!account||!selected)throw new Error('请先登录并连接 Mac');return request('/account/binding-start',{id:selected.id});},
   info: () => request('/api/relay-info'),
   async start(handlers) {
     callbacks=handlers;localInfo=null;formReady=false;$('account-form').setAttribute('data-ready','false');trace('boot-start');const generation=++authGeneration;$('account-submit').disabled=true;authStatus('正在准备登录，请稍候…');
