@@ -1,9 +1,10 @@
 import { transport } from './transport.js';
 import {independentClient,receivePairing} from './client-platform.js';
 import {setupTrustedAdmin} from './trusted-ui.js';
+import {setupRemoteApiPanel} from './remote-api-ui.js';
 let renderMarkdown,highlightCode,markdownReady;
 function loadMarkdown(){return markdownReady||=(import('./markdown.js').then(module=>{renderMarkdown=module.renderMarkdown;highlightCode=module.highlightCode;}));}
-import { accountUI } from './accounts.js?v=0.10.6';
+import { accountUI } from './accounts.js?v=0.11.0';
 import { activityTime,chronologicalWorkspace,workspaceOrder } from './chronology.js';
 import { Deliveries } from './delivery.js';
 import { icon, buttonIcon } from './icons.js';
@@ -12,6 +13,7 @@ const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className
 const uid=()=>[...crypto.getRandomValues(new Uint8Array(16))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const key=t=>`${t.hostId}/${t.id}`, api=(path,payload)=>transport.request(path,payload);
 const state={hosts:[],projects:[],threads:[],hostId:localStorage.getItem('pocket-host')||'local',projectId:null,selected:null,conversation:null,source:null,epoch:0,catalogEpoch:0,models:[],defaults:{},drafts:new Map(),sending:false,pendingSend:null,fileCache:new Map(),openProjects:new Set(),requestSignature:null};
+const remoteApiPanel=setupRemoteApiPanel($('settings-remote-api'),{request:async body=>{const device=transport.deviceId,epoch=state.epoch;const value=await api(body?'/api/remote-api/toggle':'/api/remote-api',body);if(device!==transport.deviceId||epoch!==state.epoch)throw new Error('当前 Mac 已切换，请重新打开设置');return value;}});
 state.deliveries=new Deliveries();state.inflightDelivery=null;state.lastLiveEvent=0;
 state.images=[];state.imageDrafts=new Map();state.uploading=0;state.imageCache=new Map();
 const hostName=id=>state.hosts.find(h=>h.id===id)?.name||id;
@@ -186,7 +188,8 @@ async function browseFiles(path=state.conversation?.cwd||state.selected?.cwd){
 $('browse-files').onclick=()=>browseFiles();$('file-parent').onclick=()=>browseFiles(state.fileDirectory.slice(0,state.fileDirectory.lastIndexOf('/'))||'/');
 function showTrustStatus(){let node=$('selected-mac').querySelector('.trust-state');if(state.device?.trusted){if(!node){node=el('small','trust-state');$('selected-mac').append(node);}node.textContent=state.device.signatureRequired?' · 签名保护已启用':' · 已签名连接，旧通道仍允许';}else node?.remove();}
 async function updateStatus(){try{state.device=await api('/api/status');showTrustStatus();$('mac-status').textContent=state.device.connected?'Mac 在线':'Codex 连接中';$('mac-status').classList.toggle('online',state.device.connected);}catch(e){if(e.code==='trusted-client-required'){state.source?.close();await accountUI.switchMac();$('account-error').textContent=e.message;return;}if(e.status===401){if(transport.account)await accountUI.checkSession();else resetLogin();}else{if(transport.account&&transport.connectionState!=='online'&&!await accountUI.checkSession())return;const recent=Date.now()-state.lastLiveEvent<15000;$('mac-status').textContent=recent?'Mac 在线 · 状态确认中':transport.connectionState==='online'?'状态确认中':'连接恢复中';$('mac-status').classList.toggle('online',recent);}}}
-$('settings').onclick=async()=>{$('settings-dialog').showModal();$('settings-error').textContent='';$('device-label').textContent=`当前设备：${state.device.deviceName}`;$('pairing-admin').hidden=!state.device.local;if(state.device.local)showPairing();};
+$('settings').onclick=async()=>{$('settings-dialog').showModal();$('settings-error').textContent='';$('device-label').textContent=`当前设备：${state.device.deviceName}`;$('pairing-admin').hidden=!state.device.local;$('settings-remote-api').hidden=!state.device.trusted;if(state.device.trusted)remoteApiPanel.refresh();if(state.device.local)showPairing();};
+setInterval(()=>{if($('settings-dialog').open&&state.device?.trusted)remoteApiPanel.refresh();},5000);
 async function showPairing(){try{const data=await api('/api/local-pairing');$('new-code').textContent=data.code||'请生成新的配对码';showRelayLink(data);$('devices').replaceChildren();for(const d of data.devices){const row=el('div','device-row'),b=el('button',null,'撤销');b.onclick=async()=>{try{await api('/api/devices/revoke',{deviceId:d.id});showPairing();updateStatus();}catch(e){$('settings-error').textContent=e.message;}};row.append(el('span',null,d.name),b);$('devices').append(row);}}catch(e){$('settings-error').textContent=e.message;}}
 $('close-settings').onclick=()=>$('settings-dialog').close();$('renew-pairing').onclick=async()=>{await api('/api/pairing/renew',{});showPairing();};$('logout').onclick=async()=>{if(transport.account){$('settings-dialog').close();accountUI.logout();return;}await api('/api/logout',{});$('settings-dialog').close();resetLogin();};
 setInterval(()=>{if(!$('workspace').hidden)updateStatus();},10000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('workspace').hidden)updateStatus();});

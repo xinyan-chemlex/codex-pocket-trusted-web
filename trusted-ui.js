@@ -1,5 +1,6 @@
 import {independentClient} from './client-platform.js';
 import {icon} from './icons.js';
+import {setupRemoteApiPanel} from './remote-api-ui.js';
 const $=id=>document.getElementById(id);
 const el=(tag,text='',cls)=>{const n=document.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n;};
 export async function setupTrustedAdmin({standalone=false}={}){
@@ -8,6 +9,7 @@ export async function setupTrustedAdmin({standalone=false}={}){
   if(standalone){document.documentElement.dataset.entry='management';document.body.classList.add('local-management');for(const id of ['boot-screen','account-screen','pair-screen','workspace'])$(id).hidden=true;$('close-trusted').hidden=true;if(!dialog.open)dialog.show();}
   const request=async body=>{const r=await fetch('/api/local-trust',{cache:'no-store',...body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}});const data=await r.json();if(!r.ok)throw new Error(data.error);return data;};
   let urlDirty=false,inviteBusy=false,listSignature='',invite;
+  const remoteApiPanel=setupRemoteApiPanel($('trusted-remote-api'),{local:true,clientUrl:()=>$('trusted-client-url').value,request:async body=>{const r=await fetch('/api/local-remote-api',{cache:'no-store',...body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}});const data=await r.json();if(!r.ok)throw new Error(data.error);return data;}});
   $('trusted-client-url').oninput=()=>{urlDirty=true;};
   function fingerprint(id){const details=el('details','','trust-fingerprint');details.append(el('summary','核对设备指纹'),el('code',id.match(/.{1,8}/g).join(' ')));return details;}
   function deviceCard(device,pending){
@@ -46,11 +48,11 @@ export async function setupTrustedAdmin({standalone=false}={}){
     catch(error){$('trusted-error').textContent=error.message;}
     finally{if(body.action==='invite'){inviteBusy=false;$('trusted-invite-button').disabled=false;$('trusted-invite-button').textContent=invite?'生成另一份绑定码':'生成新绑定码';}}
   }
-  try{render(await request());}catch(error){if(standalone)$('trusted-error').textContent='本机设备管理暂时不可用：'+error.message;return;}
+  try{render(await request());remoteApiPanel.refresh();}catch(error){if(standalone)$('trusted-error').textContent='本机设备管理暂时不可用：'+error.message;return;}
   for(const button of document.querySelectorAll('[data-trusted-admin]')){button.hidden=false;button.onclick=async()=>{render(await request());dialog.showModal();};}
   $('close-trusted').onclick=()=>dialog.close();$('trusted-invite-button').onclick=()=>act({action:'invite'});
   $('trusted-configure').onsubmit=event=>{event.preventDefault();act({action:'configure',clientUrl:$('trusted-client-url').value.trim()});};
-  const timer=setInterval(()=>{if(dialog.open){updateExpiry();request().then(render).catch(e=>{$('trusted-error').textContent=e.message;});}},3000);
+  const timer=setInterval(()=>{if(dialog.open){updateExpiry();remoteApiPanel.refresh();request().then(render).catch(e=>{$('trusted-error').textContent=e.message;});}},3000);
   window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
   if(!standalone&&location.hash==='#trust')dialog.showModal();
 }
