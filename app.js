@@ -1,10 +1,12 @@
 import { transport } from './transport.js';
 import {independentClient,receivePairing} from './client-platform.js';
-import {setupTrustedAdmin} from './trusted-ui.js';
-import {setupRemoteApiPanel} from './remote-api-ui.js';
+import {setupTrustedAdmin} from './trusted-ui.js?v=0.12.0';
+import {setupRemoteApiPanel} from './remote-api-ui.js?v=0.12.0';
+window.addEventListener('pagehide',()=>transport.disconnect());
+window.addEventListener('pageshow',event=>{if(event.persisted)location.reload();});
 let renderMarkdown,highlightCode,markdownReady;
 function loadMarkdown(){return markdownReady||=(import('./markdown.js').then(module=>{renderMarkdown=module.renderMarkdown;highlightCode=module.highlightCode;}));}
-import { accountUI } from './accounts.js?v=0.11.0';
+import { accountUI } from './accounts.js?v=0.12.0';
 import { activityTime,chronologicalWorkspace,workspaceOrder } from './chronology.js';
 import { Deliveries } from './delivery.js';
 import { icon, buttonIcon } from './icons.js';
