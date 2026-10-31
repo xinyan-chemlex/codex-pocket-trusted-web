@@ -20,13 +20,15 @@ export function setupRemoteApiPanel(container,{request,local=false,clientUrl=()=
   container.classList.add('remote-api-panel');container.replaceChildren(heading,description,lifetime,urlRow,keyRow,actions,error);
   function render(value){
     state=value;container.hidden=!value.supported;if(!value.supported)return;
+    if(value.connectionPolicy==='api-idle')lifetime.textContent='适用于平板和 OpenClaw：关闭网页后仍可调用。连续 30 分钟无 API 调用后自动停用；主动关闭或撤销立即生效。';
+    else lifetime.textContent='保持本设备的远控页面连接。关闭页面、退出或断线后，临时 Key 自动失效；重新连接需重新开启。';
     status.textContent=local?`${value.activeDevices||0} 台设备已开启`:value.enabled?(value.online?'本设备已开启':'正在连接'):'本设备已关闭';status.classList.toggle('enabled',value.enabled&&value.online);
     address.value=value.baseUrl||'';urlRow.hidden=!value.baseUrl;
     apiKey.value=value.apiKey||'';keyRow.hidden=local||!value.enabled||!value.apiKey;
     toggle.textContent=local?'关闭所有设备转发':value.enabled?'关闭本设备转发':'开启本设备转发';toggle.hidden=local&&!value.enabled;toggle.disabled=busy;
     toggle.setAttribute('aria-pressed',String(Boolean(value.enabled)));
     const url=clientUrl();link.hidden=!local||!url;if(url)link.href=url;
-    if(local)description.textContent='每台设备在自己的远控设置里独立开启。设备断线后，仅关闭它自己的转发。';
+    if(local)description.textContent=value.connectionPolicy==='api-idle'?'每台设备独立开启和关闭。关闭网页不影响调用，连续 30 分钟无 API 调用后只停用该设备。':'每台设备在自己的远控设置里独立开启。设备断线后，仅关闭它自己的转发。';
   }
   async function refresh(){
     if(reading||busy)return;reading=true;const current=++generation;
