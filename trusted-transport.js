@@ -1,20 +1,13 @@
-import {PROTOCOL,generateIdentity,makeHello,acceptChallenge,trustedPacket,trustedResponse,randomId,from64,text} from './trusted-crypto.js';
+import {PROTOCOL,makeHello,acceptChallenge,trustedPacket,trustedResponse,randomId,from64,text} from './trusted-crypto.js';
 import {relayOrigin,accountToken,pairingInfo} from './client-platform.js';
-let identityPromise;
-export function browserIdentity(){return identityPromise||=(async()=>{
-  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('codex-pocket-trust',1);r.onupgradeneeded=()=>r.result.createObjectStore('keys');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
-  try{
-    const get=()=>new Promise((resolve,reject)=>{const r=db.transaction('keys').objectStore('keys').get('identity');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
-    let identity=await get();if(!identity){identity=await generateIdentity();await new Promise((resolve,reject)=>{const tx=db.transaction('keys','readwrite');tx.objectStore('keys').add(identity,'identity');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);}).catch(async error=>{const existing=await get();if(!existing)throw error;identity=existing;});}
-    if(identity.privateKey.extractable)throw new Error('浏览器设备私钥未安全保存，请重新建立绑定');return identity;
-  }finally{db.close();}
-})();}
+import {browserIdentity,retainBrowserTrust} from './browser-trust-store.js';
+export {browserIdentity} from './browser-trust-store.js';
 export class TrustedConnection {
   constructor(bridge,{identity=browserIdentity,token=accountToken,pin=pairingInfo}={}){this.bridge=bridge;this.account=true;this.pending=new Map();this.subscriptions=new Set();this.retry=500;this.identity=identity;this.token=token;this.pin=pin;}
   get epoch(){return this.session?this.wireEpoch:null;}
-  connect(){if(this.closed)return Promise.reject(new Error('设备连接已关闭'));if(this.connecting)return this.connecting;if(this.socket?.readyState===WebSocket.OPEN&&this.session)return Promise.resolve();const attempt=this.open();this.connecting=attempt;attempt.finally(()=>{if(this.connecting===attempt)this.connecting=null;}).catch(()=>{});return attempt;}
+  connect(){if(this.closed)return Promise.reject(new Error('设备连接已关闭'));if(this.connecting)return this.connecting;if(this.socket?.readyState===WebSocket.OPEN&&this.session)return Promise.resolve();const attempt=this.open().catch(error=>{if(error.code==='client-auth-required'&&!this.closed)return this.open();throw error;});this.connecting=attempt;attempt.finally(()=>{if(this.connecting===attempt)this.connecting=null;}).catch(()=>{});return attempt;}
   async open(){
-    const pin=this.pin(this.bridge),identity=await this.identity(),token=this.token();if(!token)throw new Error('请先登录账号');
+    const pin=await this.pin(this.bridge),identity=await this.identity(),token=this.token();if(!token)throw new Error('请先登录账号');
     if(this.closed)throw new Error('设备连接已关闭');
     return new Promise((resolve,reject)=>{
       const url=new URL('/relay/client/'+encodeURIComponent(this.bridge),relayOrigin);url.protocol=url.protocol==='https:'?'wss:':'ws:';
@@ -32,7 +25,7 @@ export class TrustedConnection {
             let result;try{result=await this.jsonExchange(socket,c,box,this.session);}catch(error){if(error.code==='local-approval-required'){const hash=await crypto.subtle.digest('SHA-256',text(identity.publicKey)),fingerprint=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('').match(/.{1,8}/g).join(' ');error.message+='。浏览器指纹：'+fingerprint;}throw error;}
             if(result.status!==200)throw Object.assign(new Error(result.error),{status:result.status,code:result.code});
             if(this.socket!==socket||this.closed)throw new Error('连接已变化，请重新连接');
-            sessionStorage.removeItem('pocket-pair-ticket:'+this.bridge);this.retry=500;clearTimeout(timer);const reconnected=this.hasConnected;this.hasConnected=true;resolve();
+            sessionStorage.removeItem('pocket-pair-ticket:'+this.bridge);void retainBrowserTrust();this.retry=500;clearTimeout(timer);const reconnected=this.hasConnected;this.hasConnected=true;resolve();
             if(reconnected)for(const sub of this.subscriptions)sub.reconnect();
           })().catch(error=>{this.session=null;clearTimeout(timer);reject(error);socket.close();});
         }else if(m.type==='offline'){this.session=null;this.failPending(new Error('Mac 暂时离线'));clearTimeout(timer);reject(new Error('Mac 暂时离线'));}

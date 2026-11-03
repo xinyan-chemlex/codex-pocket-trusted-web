@@ -1,6 +1,6 @@
 import { icon } from './icons.js';
 import { createVault, unlockVault, unlockDevice } from './account-crypto.js';
-import {independentClient,accountRequest,forgetAccount,hasMacPin,pendingPairing,clearPendingPairing,savePairing,queuePairing} from './client-platform.js';
+import {independentClient,accountRequest,forgetAccount,hasMacPin,pendingPairing,clearPendingPairing,savePairing,queuePairing,needsDeviceBinding} from './client-platform.js';
 import {codeLookup,openBinding} from './client-binding.js';
 import {transport} from './transport.js';
 const $ = id => document.getElementById(id);
@@ -42,8 +42,9 @@ async function picker() { $('account-form').setAttribute('data-ready','true'); $
       const top=document.createElement('div');top.className='mac-card-top';const symbol=document.createElement('span');symbol.className='mac-symbol';symbol.append(icon('monitor'));const status=document.createElement('span');status.className='mac-state';status.textContent=device.online?'在线':'离线';top.append(symbol,status);
       const name=document.createElement('strong');name.className='mac-name';name.textContent=device.name;
       const meta=document.createElement('span');meta.className='mac-meta';meta.textContent=device.createdAt?'绑定于 '+new Date(device.createdAt).toLocaleDateString('zh-CN',{month:'long',day:'numeric'}):'你的 Mac 工作空间';
-      const action=document.createElement('span');action.className='mac-connect';const label=()=>!device.online?'等待 Mac 上线':independentClient&&!hasMacPin(device.id)?'绑定当前设备':'打开工作空间';action.append(document.createTextNode(label()),icon('arrow'));button.append(top,name,meta,action);
-      button.onclick = async () => {if(independentClient&&!hasMacPin(device.id)){beginBinding(device);return;}button.disabled = true; try { const key = independentClient?null:await unlockDevice(vaultKey, device, account.id); selected = device;notifyConnectionMac(device);action.firstChild.textContent='正在连接工作空间…';await callbacks.onSelect(device, key); } catch (e) { $('account-screen').hidden=false;if(independentClient&&['pairing-required','local-approval-required','client-auth-required'].includes(e.code)){beginBinding(device);$('bind-device-status').textContent=e.message;}else $('account-error').textContent = e.message; } finally { button.disabled = !device.online;action.firstChild.textContent=label(); } };
+      const savedPin=independentClient&&await hasMacPin(device.id);
+      const action=document.createElement('span');action.className='mac-connect';const label=()=>!device.online?'等待 Mac 上线':independentClient&&!savedPin?'绑定当前设备':'打开工作空间';action.append(document.createTextNode(label()),icon('arrow'));button.append(top,name,meta,action);
+      button.onclick = async () => {if(independentClient&&!savedPin){await beginBinding(device);return;}button.disabled = true; try { const key = independentClient?null:await unlockDevice(vaultKey, device, account.id); selected = device;notifyConnectionMac(device);action.firstChild.textContent='正在连接工作空间…';await callbacks.onSelect(device, key); } catch (e) { $('account-screen').hidden=false;if(independentClient&&needsDeviceBinding(e)){await beginBinding(device,{tryExisting:false});$('bind-device-status').textContent=e.message;}else $('account-error').textContent = e.message; } finally { button.disabled = !device.online;action.firstChild.textContent=label(); } };
       const actions = document.createElement('div'); actions.className = 'mac-card-actions';
       const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'text-button'; rename.textContent = '重命名';
       rename.onclick = () => { $('rename-mac-id').value = device.id; $('rename-mac-name').value = device.name; $('rename-mac-error').textContent = ''; $('rename-mac-dialog').showModal(); };
@@ -52,7 +53,7 @@ async function picker() { $('account-form').setAttribute('data-ready','true'); $
       if(independentClient){const bind=document.createElement('button');bind.type='button';bind.className='text-button';bind.textContent='绑定 / 重新绑定当前设备';bind.onclick=()=>beginBinding(device);actions.append(bind);}
       actions.append(rename, remove); card.append(button, actions); $('mac-list').append(card);
     }
-    if(independentClient&&pendingPairing()){const pending=pendingPairing(),target=devices.find(d=>d.id===pending.ticket?.bridgeId)||devices[0];if(target)beginBinding(target,{notifyMac:false});}
+    if(independentClient&&pendingPairing()){const pending=pendingPairing(),target=devices.find(d=>d.id===pending.ticket?.bridgeId)||devices[0];if(target)await beginBinding(target,{notifyMac:false});}
   } catch (e) { $('account-error').textContent = e.message; if (e.status === 401) { vaultKey = null; form(); } }
 }
 function stopScanner(){scanner?.destroy();scanner=null;$('bind-device-camera').hidden=true;}
@@ -67,11 +68,29 @@ async function notifyConnectionMac(device){
   try{const result=await request('/account/binding-start',{id:device.id});if(account?.id===accountId&&authGeneration===generation&&selected?.id===device.id)callbacks.onMacPageResult?.(result);}
   catch(error){if(account?.id===accountId&&authGeneration===generation&&selected?.id===device.id)callbacks.onMacPageResult?.({opened:false,status:'failed',error:error.message});}
 }
-function beginBinding(device,{notifyMac=true}={}){
-  if(!account||!independentClient)return;bindTarget=device;stopScanner();$('bind-device-status').textContent='在 Mac 本地管理页生成新绑定码。每台手机或平板需要单独绑定，已绑定设备不会受影响。';
+async function beginBinding(device,{notifyMac=true,tryExisting=true}={}){
+  if(!account||!independentClient)return;
+  const accountId=account.id,generation=authGeneration;
+  let savedPin;try{savedPin=await hasMacPin(device.id);}catch(error){$('account-error').textContent='无法读取本机绑定记录：'+error.message;return;}
+  if(account?.id!==accountId||authGeneration!==generation)return;
+  // A QR fragment is an invitation, not evidence that an approved browser lost trust.
+  // Try the existing device signature first, even when the scanned invitation expired.
+  if(savedPin&&tryExisting){
+    clearPendingPairing();authStatus('正在验证已绑定设备…');selected=device;transport.selectDevice(device.id,null);
+    try{
+      const status=await transport.request('/api/status');if(status.trusted!==true)throw new Error('Mac 尚未确认设备签名');
+      if(account?.id!==accountId||authGeneration!==generation)return;
+      await callbacks.onSelect(device,null,{connected:true});authStatus('');return;
+    }catch(error){
+      if(account?.id!==accountId||authGeneration!==generation)return;
+      if(!needsDeviceBinding(error)){$('account-error').textContent='已保存设备绑定，但暂时连接失败：'+error.message;authStatus('');return;}
+    }
+    authStatus('');
+  }
+  bindTarget=device;stopScanner();$('bind-device-status').textContent='只需首次绑定。同一浏览器重新登录会保留绑定；请使用普通窗口并保留网站数据。在 Mac 生成绑定码后输入或扫码。';
   $('bind-device-mac').replaceChildren(...devices.map(d=>{const option=document.createElement('option');option.value=d.id;option.textContent=d.name;return option;}));$('bind-device-mac').value=device.id;
   $('bind-device-name').value=localStorage.getItem('pocket-browser-name')||'我的手机 / 平板';$('bind-device-code').value=pendingPairing()?.code||'';
-  $('bind-device-retry').hidden=!hasMacPin(device.id);$('bind-device-dialog').showModal();
+  $('bind-device-retry').hidden=!savedPin;$('bind-device-dialog').showModal();
   if(notifyMac)requestMacBindingPage(device);else $('bind-device-mac-status').textContent='请在 Mac 设备管理页确认这台设备。';
   const pending=pendingPairing();if(pending?.ticket){clearPendingPairing();runBinding(async()=>pending.ticket);}
 }
@@ -79,24 +98,24 @@ async function runBinding(getTicket){
   if(bindBusy||!account)return;bindBusy=true;const device=devices.find(d=>d.id===$('bind-device-mac').value);if(!device){bindBusy=false;return;}
   const accountId=account.id,generation=authGeneration,name=$('bind-device-name').value.trim()||'我的手机 / 平板';const controls=[...$('bind-device-form').querySelectorAll('input,select,button')];for(const c of controls)c.disabled=true;$('bind-device-status').textContent=getTicket?'正在验证绑定码…':'正在向 Mac 验证当前设备…';
   try{
-    if(getTicket){clearPendingPairing();const ticket=await getTicket();if(account?.id!==accountId||authGeneration!==generation)return;savePairing(ticket,device.id);}
+    if(getTicket){clearPendingPairing();const ticket=await getTicket();if(account?.id!==accountId||authGeneration!==generation)return;await savePairing(ticket,device.id);}
     localStorage.setItem('pocket-browser-name',name);selected=device;$('bind-device-code').value='';stopScanner();
     // Do not clear or reopen the workspace while approval is still pending.
     transport.selectDevice(device.id,null);const status=await transport.request('/api/status');
     if(status.trusted!==true)throw new Error('Mac 尚未确认设备签名');
     $('bind-device-status').textContent='Mac 已确认设备绑定，正在打开工作空间…';await callbacks.onSelect(device,null,{connected:true});$('bind-device-dialog').close();
   }catch(error){
-    const waiting=error.code==='local-approval-required',expired=['pairing-required','client-auth-required'].includes(error.code);
+    const waiting=error.code==='local-approval-required',expired=error.code==='pairing-required';
     if(expired){sessionStorage.removeItem('pocket-pair-ticket:'+device.id);clearPendingPairing();}
     $('bind-device-status').textContent=waiting?'等待 Mac 本地批准。请核对下方指纹，在 Mac 点击“批准这个浏览器”后，再检查连接。\n'+error.message:expired?'绑定信息已过期或未被 Mac 接受。请在 Mac 重新生成绑定码后输入，尚未批准此设备。':'连接未完成：'+error.message;
     if(!$('bind-device-dialog').open){$('account-screen').hidden=false;$('bind-device-dialog').showModal();}
-    $('bind-device-retry').hidden=expired||!hasMacPin(device.id);
+    $('bind-device-retry').hidden=expired||!await hasMacPin(device.id);
   }
   finally{bindBusy=false;for(const c of controls)c.disabled=false;}
 }
 $('bind-current-device').onclick=()=>{if(devices.length)beginBinding(selected||devices[0]);};
 $('close-bind-device').onclick=()=>$('bind-device-dialog').close();$('bind-device-dialog').addEventListener('close',stopScanner);
-$('bind-device-mac').onchange=()=>{bindTarget=devices.find(d=>d.id===$('bind-device-mac').value);$('bind-device-retry').hidden=!hasMacPin(bindTarget?.id);if(bindTarget)requestMacBindingPage(bindTarget);};
+$('bind-device-mac').onchange=async()=>{bindTarget=devices.find(d=>d.id===$('bind-device-mac').value);$('bind-device-retry').hidden=!await hasMacPin(bindTarget?.id);if(bindTarget)requestMacBindingPage(bindTarget);};
 $('bind-device-form').onsubmit=event=>{event.preventDefault();const code=$('bind-device-code').value;$('bind-device-code').value='';runBinding(async()=>{const id=$('bind-device-mac').value,result=await request('/account/client-pairing',{id,lookup:await codeLookup(code)});return openBinding(code,result.box);});};
 $('bind-device-retry').onclick=()=>runBinding();
 $('bind-device-scan').onclick=async()=>{
