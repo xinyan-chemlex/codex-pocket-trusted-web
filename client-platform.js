@@ -1,4 +1,4 @@
-import {savedMacPin,saveMacPin} from './browser-trust-store.js';
+import {savedMacPin,saveMacPin} from './browser-trust-store.js?v=0.13.2';
 export const independentClient=document.documentElement.dataset.clientMode==='trusted';
 export const relayOrigin=independentClient?document.documentElement.dataset.relayOrigin:location.origin;
 const tokenKey='pocket-trusted-account-token';

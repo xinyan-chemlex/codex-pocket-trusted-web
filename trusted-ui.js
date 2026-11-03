@@ -1,6 +1,6 @@
-import {independentClient} from './client-platform.js';
-import {icon} from './icons.js';
-import {setupRemoteApiPanel} from './remote-api-ui.js?v=0.13.1';
+import {independentClient} from './client-platform.js?v=0.13.2';
+import {icon} from './icons.js?v=0.13.2';
+import {setupRemoteApiPanel} from './remote-api-ui.js?v=0.13.2';
 const $=id=>document.getElementById(id);
 const el=(tag,text='',cls)=>{const n=document.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n;};
 export async function setupTrustedAdmin({standalone=false}={}){

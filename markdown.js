@@ -1,4 +1,4 @@
-import{MarkdownIt,DOMPurify,katex,hljs}from'./vendor/bundle.js';
+import{MarkdownIt,DOMPurify,katex,hljs}from'./vendor/bundle.js?v=0.13.2';
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const math=(text,display)=>{try{return katex.renderToString(text,{displayMode:display,throwOnError:false,trust:false,strict:'ignore',maxExpand:1000});}catch{return escape(text);}};
 const md=new MarkdownIt({html:false,linkify:true,typographer:false,breaks:false,highlight:(code,lang)=>{if(['math','latex','tex'].includes(lang))return `<div class="math-block">${math(code,true)}</div>`;try{return hljs.highlight(code,{language:hljs.getLanguage(lang)?lang:'plaintext'}).value;}catch{return escape(code);}}});

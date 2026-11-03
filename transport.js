@@ -119,5 +119,5 @@ if (relay?.keyText) {
   const manifest = { name: 'Codex Pocket', short_name: 'Codex Pocket', start_url: `${location.pathname}?bridge=${encodeURIComponent(bridge)}#${new URLSearchParams({ key: relay.keyText })}`, display: 'standalone', background_color: '#f3f4f1', theme_color: '#f3f4f1', icons: [{ src: `${location.origin}/icon.svg`, sizes: 'any', type: 'image/svg+xml' }] };
   document.querySelector('link[rel="manifest"]').href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
 }
-import {independentClient} from './client-platform.js';
-import {TrustedConnection} from './trusted-transport.js';
+import {independentClient} from './client-platform.js?v=0.13.2';
+import {TrustedConnection} from './trusted-transport.js?v=0.13.2';

@@ -1,8 +1,8 @@
-import { icon } from './icons.js';
-import { createVault, unlockVault, unlockDevice } from './account-crypto.js';
-import {independentClient,accountRequest,forgetAccount,hasMacPin,pendingPairing,clearPendingPairing,savePairing,queuePairing,needsDeviceBinding} from './client-platform.js';
-import {codeLookup,openBinding} from './client-binding.js';
-import {transport} from './transport.js';
+import { icon } from './icons.js?v=0.13.2';
+import { createVault, unlockVault, unlockDevice } from './account-crypto.js?v=0.13.2';
+import {independentClient,accountRequest,forgetAccount,hasMacPin,pendingPairing,clearPendingPairing,savePairing,queuePairing,needsDeviceBinding} from './client-platform.js?v=0.13.2';
+import {codeLookup,openBinding} from './client-binding.js?v=0.13.2';
+import {transport} from './transport.js?v=0.13.2';
 const $ = id => document.getElementById(id);
 let account, vaultKey, csrf, localInfo, register = false, selected, callbacks = {},authenticating=false,formReady=false,authGeneration=0,devices=[],bindTarget,bindBusy=false,scanner,bindingNotice=0;
 let attemptId=[...crypto.getRandomValues(new Uint8Array(12))].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -120,7 +120,7 @@ $('bind-device-form').onsubmit=event=>{event.preventDefault();const code=$('bind
 $('bind-device-retry').onclick=()=>runBinding();
 $('bind-device-scan').onclick=async()=>{
   if(scanner||bindBusy)return;
-  try{const {default:QrScanner}=await import('./vendor/qr-scanner/qr-scanner.min.js');$('bind-device-camera').hidden=false;scanner=new QrScanner($('bind-device-video'),result=>{try{queuePairing(result.data||result);const pending=pendingPairing();stopScanner();if(pending?.code){$('bind-device-code').value=pending.code;$('bind-device-form').requestSubmit();}else if(pending?.ticket)runBinding(async()=>pending.ticket);}catch(e){$('bind-device-status').textContent=e.message;}},{returnDetailedScanResult:true,preferredCamera:'environment'});await scanner.start();$('bind-device-status').textContent='将摄像头对准 Mac 上的绑定二维码。画面只在当前设备上识别。';}
+  try{const {default:QrScanner}=await import('./vendor/qr-scanner/qr-scanner.min.js?v=0.13.2');$('bind-device-camera').hidden=false;scanner=new QrScanner($('bind-device-video'),result=>{try{queuePairing(result.data||result);const pending=pendingPairing();stopScanner();if(pending?.code){$('bind-device-code').value=pending.code;$('bind-device-form').requestSubmit();}else if(pending?.ticket)runBinding(async()=>pending.ticket);}catch(e){$('bind-device-status').textContent=e.message;}},{returnDetailedScanResult:true,preferredCamera:'environment'});await scanner.start();$('bind-device-status').textContent='将摄像头对准 Mac 上的绑定二维码。画面只在当前设备上识别。';}
   catch{$('bind-device-status').textContent='无法使用摄像头，请允许相机访问，或输入 Mac 上的绑定码。';stopScanner();}
 };
 window.addEventListener('pocket-pairing-ready',()=>{if(account&&devices.length&&!scanner){const pending=pendingPairing(),device=devices.find(d=>d.id===pending?.ticket?.bridgeId)||devices[0];beginBinding(device,{notifyMac:false});}});

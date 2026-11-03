@@ -1,4 +1,4 @@
-import {text,to64,from64} from './trusted-crypto.js';
+import {text,to64,from64} from './trusted-crypto.js?v=0.13.2';
 const ALPHABET='0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 export function bindingCode(){
   const bytes=crypto.getRandomValues(new Uint8Array(20));let bits=0,value=0,out='';

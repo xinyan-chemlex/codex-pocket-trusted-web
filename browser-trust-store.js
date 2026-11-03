@@ -1,4 +1,4 @@
-import {generateIdentity} from './trusted-crypto.js';
+import {generateIdentity} from './trusted-crypto.js?v=0.13.2';
 
 // Keep Mac pins beside the nonextractable signing key, across account sessions.
 async function database(){

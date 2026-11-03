@@ -1,7 +1,7 @@
-import {PROTOCOL,makeHello,acceptChallenge,trustedPacket,trustedResponse,randomId,from64,text} from './trusted-crypto.js';
-import {relayOrigin,accountToken,pairingInfo} from './client-platform.js';
-import {browserIdentity,retainBrowserTrust} from './browser-trust-store.js';
-export {browserIdentity} from './browser-trust-store.js';
+import {PROTOCOL,makeHello,acceptChallenge,trustedPacket,trustedResponse,randomId,from64,text} from './trusted-crypto.js?v=0.13.2';
+import {relayOrigin,accountToken,pairingInfo} from './client-platform.js?v=0.13.2';
+import {browserIdentity,retainBrowserTrust} from './browser-trust-store.js?v=0.13.2';
+export {browserIdentity} from './browser-trust-store.js?v=0.13.2';
 export class TrustedConnection {
   constructor(bridge,{identity=browserIdentity,token=accountToken,pin=pairingInfo}={}){this.bridge=bridge;this.account=true;this.pending=new Map();this.subscriptions=new Set();this.retry=500;this.identity=identity;this.token=token;this.pin=pin;}
   get epoch(){return this.session?this.wireEpoch:null;}
@@ -37,7 +37,7 @@ export class TrustedConnection {
             if(m.box.kind==='error')throw Object.assign(new Error(m.box.error||'Mac 验证失败'),{code:m.box.code});
             if(p.hello){p.resolve(m.box);this.pending.delete(m.id);return;}
             const value=await trustedResponse(p.session,p.channel,m.box,m.sequence);if(this.pending.get(m.id)===p)p.deliver(value);
-          }).catch(error=>{this.pending.delete(m.id);p.reject(error);});
+          }).catch(error=>{this.pending.delete(m.id);p.reject(error);if(error.code==='client-auth-required'&&this.socket===socket){this.session=null;socket.close();}});
         }
       };
       socket.onclose=event=>{clearTimeout(timer);if(this.socket!==socket)return;this.socket=null;this.session=null;reject(new Error('连接暂时中断'));this.failPending(new Error('连接中断，正在确认已发送操作'));for(const sub of this.subscriptions)sub.dispatchEvent(new Event('error'));if(event.code===1008&&!this.closed&&/session|access|revoked|migrated/i.test(event.reason||''))window.dispatchEvent(new Event('pocket-access-ended'));if(!this.closed&&this.subscriptions.size){clearTimeout(this.timer);this.timer=setTimeout(()=>this.connect().catch(()=>{}),this.retry);this.retry=Math.min(this.retry*2,10000);}};
@@ -55,11 +55,17 @@ export class TrustedConnection {
     this.pending.set(channel.id,{channel,session,sequence:0,chain:Promise.resolve(),reject,deliver:value=>{deliver(value);if(value.kind==='end')this.pending.delete(channel.id);}});
     socket.send(JSON.stringify({type:'request',id:channel.id,box}));return()=>{this.pending.delete(channel.id);if(socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'cancel',id:channel.id}));};
   }
-  async request(path,payload){
+  async request(path,payload,retryExpired=true){
     await this.connect();const channel={bridgeId:this.bridge,epoch:this.wireEpoch,clientId:this.clientId,id:randomId()},socket=this.socket,session=this.session;
     const box=await trustedPacket(session,channel,'request',{method:payload===undefined?'GET':'POST',path,body:payload===undefined?'':JSON.stringify(payload),cookie:''});
     if(this.socket!==socket||socket.readyState!==WebSocket.OPEN||this.session!==session)throw Object.assign(new Error('尚未发送，连接正在恢复'),{code:'not-sent'});
-    return this.jsonExchange(socket,channel,box,session);
+    try{return await this.jsonExchange(socket,channel,box,session);}
+    catch(error){
+      // Sleeping phones can retain a socket after the Mac's session expires.
+      // Only reads may retry; replaying a send/approval could duplicate an action.
+      if(payload===undefined&&retryExpired&&error.code==='client-auth-required'&&!this.closed)return this.request(path,payload,false);
+      throw error;
+    }
   }
   events(path){const source=new TrustedEvents(this,path);this.subscriptions.add(source);source.reconnect();return source;}
   close(){this.closed=true;clearTimeout(this.timer);for(const sub of [...this.subscriptions])sub.close();this.failPending(new Error('设备已断开'));this.socket?.close();this.session=null;}

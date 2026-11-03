@@ -1,15 +1,15 @@
-import { transport } from './transport.js';
-import {independentClient,receivePairing} from './client-platform.js';
-import {setupTrustedAdmin} from './trusted-ui.js?v=0.13.1';
-import {setupRemoteApiPanel} from './remote-api-ui.js?v=0.13.1';
+import { transport } from './transport.js?v=0.13.2';
+import {independentClient,receivePairing} from './client-platform.js?v=0.13.2';
+import {setupTrustedAdmin} from './trusted-ui.js?v=0.13.2';
+import {setupRemoteApiPanel} from './remote-api-ui.js?v=0.13.2';
 window.addEventListener('pagehide',()=>transport.disconnect());
 window.addEventListener('pageshow',event=>{if(event.persisted)location.reload();});
 let renderMarkdown,highlightCode,markdownReady;
-function loadMarkdown(){return markdownReady||=(import('./markdown.js').then(module=>{renderMarkdown=module.renderMarkdown;highlightCode=module.highlightCode;}));}
-import { accountUI } from './accounts.js?v=0.13.1';
-import { activityTime,chronologicalWorkspace,workspaceOrder } from './chronology.js';
-import { Deliveries } from './delivery.js';
-import { icon, buttonIcon } from './icons.js';
+function loadMarkdown(){return markdownReady||=(import('./markdown.js?v=0.13.2').then(module=>{renderMarkdown=module.renderMarkdown;highlightCode=module.highlightCode;}));}
+import { accountUI } from './accounts.js?v=0.13.2';
+import { activityTime,chronologicalWorkspace,workspaceOrder } from './chronology.js?v=0.13.2';
+import { Deliveries } from './delivery.js?v=0.13.2';
+import { icon, buttonIcon } from './icons.js?v=0.13.2';
 const $=id=>document.getElementById(id);
 let macPageNoticeTimer;
 const macPageMessage=result=>result.opened?'已通知 Mac 打开设备管理页。':result.status==='throttled'?'Mac 刚刚已收到打开请求，请查看 Mac 上的浏览器。':result.error?'打开 Mac 页面失败：'+result.error:'Mac 未能打开设备管理页，请在连接设置中重试。';
