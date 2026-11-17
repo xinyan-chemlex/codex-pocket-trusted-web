@@ -1,6 +1,6 @@
 # Codex Pocket trusted web
 
-Static frontend only. Relay: https://47-111-86-38.sslip.io. Expected Pages path: /codex-pocket-trusted-web/. No credentials, chat history, Mac private keys, or backend source are included.
+Static frontend only. Relay: https://117.72.178.19. Expected Pages path: /codex-pocket-trusted-web/. No credentials, chat history, Mac private keys, or backend source are included.
 
 Publish GitHub Pages from the main branch and root directory. Configure the Pages URL on the Mac local trusted-device panel and add its exact origin to the relay's trustedOrigins. Sign in on the phone or iPad first, then choose "Pair this device", enter a fresh Mac-generated code or scan its QR within the pairing dialog, name the device, and approve the matching fingerprint locally on the Mac. Each new access device needs its own pairing; existing devices remain registered. Device verification is mandatory in account mode, including before the first device is bound. The old password-only channel cannot control the Mac.
 
